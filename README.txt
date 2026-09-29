@@ -18,6 +18,7 @@ FILES
   nesdoor.sh          Linux launcher (logs to nesdoor.log)
   nesdoor.bat         Windows launcher
   nesdoor.ini         settings - created on first run
+  LICENSE             GNU GPL v2
   roms/               your .nes files (you supply these)
   sessions/           open 2-player games - created automatically
   saves/<player>/     each player's saved games - created automatically
@@ -94,8 +95,62 @@ command line  /path/to/nesdoor/nesdoor.sh %n , native executable, standard
 I/O intercepted ("Intercept I/O" = Yes), drop file DOOR32.SYS.
 
 UPDATING LATER
-  Unzip the new version from the doors folder exactly as in step 2. Your
-  venv, roms/, saves/, nesdoor.ini and log are left alone.
+  Zip install: unzip the new version from the doors folder exactly as in
+  step 2. Your venv, roms/, saves/, nesdoor.ini and log are left alone.
+  Git install: see INSTALL / UPDATE WITH GIT below.
+
+
+==============================================================================
+INSTALL / UPDATE WITH GIT
+==============================================================================
+Source: https://github.com/AlexCorris/nesdoor
+Git never touches your venv, roms/, saves/, sessions/, nesdoor.ini or logs -
+they're listed in .gitignore - so "git pull" is a safe one-line update.
+The emulator core (.so) isn't kept in git; it comes from the Releases page.
+
+NEW INSTALL (replaces steps 1-3 above)
+
+     sudo apt install git python3 python3-venv
+     cd /home/mystic/mystic/doors
+     git clone https://github.com/AlexCorris/nesdoor.git
+     cd nesdoor
+     U=https://github.com/AlexCorris/nesdoor/releases/latest/download
+     wget $U/fceumm_libretro.so
+     python3 -m venv venv
+     ./venv/bin/pip install numpy
+     mkdir -p roms          # then copy your .nes files in
+
+   Then carry on from step 5 (check the emulator) and step 6 (Mystic menu).
+
+UPDATE
+
+     cd /home/mystic/mystic/doors/nesdoor
+     git pull
+
+   Nothing else is needed unless the release notes say the emulator core
+   changed; then fetch it again with the two U= / wget lines above, adding
+   -O fceumm_libretro.so to the wget line so it overwrites the old file.
+
+SWITCH AN EXISTING ZIP INSTALL TO GIT (keeps your games, saves and settings)
+
+     cd /home/mystic/mystic/doors/nesdoor
+     git init -b main
+     git remote add origin https://github.com/AlexCorris/nesdoor.git
+     git fetch origin
+     git reset --hard origin/main
+     git branch --set-upstream-to=origin/main main
+
+   "reset --hard" replaces the door's program files with the GitHub copies.
+   Your untracked files (venv, roms, saves, ini, the .so) are not touched.
+   From then on, "git pull" updates it.
+
+IF "git pull" COMPLAINS ABOUT LOCAL CHANGES
+   That means a program file (usually nesdoor.sh) was edited by hand. Keep
+   your own tweaks in nesdoor.ini where possible. To update anyway:
+       git stash          # set your edits aside
+       git pull
+       git stash pop      # put them back (fix any conflict it reports)
+   Or throw your edits away:  git checkout -- nesdoor.sh && git pull
 
 
 ==============================================================================
