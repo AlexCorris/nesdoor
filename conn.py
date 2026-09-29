@@ -5,9 +5,18 @@ Connection layer for BBS doors: the game only calls read() and write().
             (Mystic STDIO, Synchronet "Intercept I/O", ENiGMA stdio)
   socket  - DOOR32 socket handle from door32.sys (Windows boards, and Unix
             boards configured to pass the socket). Handles telnet codes.
+            A BBSDEV.DRP "socket" is already a clean byte stream, so no
+            telnet handling is applied to it.
   console - local play in a Windows terminal (testing)
+
+Drop files, in order of preference:
+  BBSDEV.DRP  - found through the BBSDEV_DRP environment variable (the modern
+                format, https://realdeuce.github.io/bbsdev.drp/), or given
+                on the command line
+  DOOR32.SYS  - line 7 alias, line 2 socket handle
+  DOOR.SYS    - line 36 alias
 """
-import os, select, socket, sys, time
+import calendar, hashlib, os, select, socket, sys, time
 
 IS_WIN = os.name == 'nt'
 IAC, DONT, DO, WONT, WILL, SB, SE = 255, 254, 253, 252, 251, 250, 240
@@ -77,9 +86,10 @@ class StdioConn:
             termios.tcsetattr(self.in_fd, termios.TCSADRAIN, self.old_tty)
 
 class SocketConn:
-    def __init__(self, handle):
+    def __init__(self, handle, clean=False):
         self.sock = socket.socket(fileno=int(handle))   # adopt the BBS's socket
         self.sock.setblocking(False)
+        self.clean = clean                              # BBSDEV.DRP: no telnet layer
         self.telnet = TelnetFilter()
     def read(self, timeout):
         r, _, _ = select.select([self.sock], [], [], max(0.0, timeout))
@@ -93,9 +103,11 @@ class SocketConn:
             return None
         if not data:
             return None
-        return self.telnet.feed(data)
+        return data if self.clean else self.telnet.feed(data)
     def write(self, data):
-        data = bytes(data).replace(b'\xff', b'\xff\xff')    # escape IAC
+        data = bytes(data)
+        if not self.clean:
+            data = data.replace(b'\xff', b'\xff\xff')        # escape IAC
         mv = memoryview(data)
         while mv:
             try:
@@ -137,10 +149,27 @@ class WinConsoleConn:
     def close(self):
         pass
 
+class Deadline:
+    """Wraps a connection so that at the BBS's forced logoff time (BBSDEV.DRP
+    line 11) reads report the caller as gone - every door loop already treats
+    that as 'save what matters and exit'."""
+    def __init__(self, conn, deadline):
+        self.conn, self.deadline = conn, deadline
+    def read(self, timeout):
+        left = self.deadline - time.time()
+        if left <= 0:
+            return None
+        data = self.conn.read(min(timeout, left))
+        return None if time.time() >= self.deadline and data == b'' else data
+    def write(self, data):
+        self.conn.write(data)
+    def close(self):
+        self.conn.close()
+
 def open_connection(mode, dropinfo):
     """mode: 'auto', 'stdio', 'socket', 'console'."""
     if mode == 'auto':
-        if dropinfo.get('handle') and IS_WIN:
+        if dropinfo.get('mode') == 'socket' or (dropinfo.get('handle') and IS_WIN):
             mode = 'socket'
         elif IS_WIN:
             mode = 'console'
@@ -148,21 +177,131 @@ def open_connection(mode, dropinfo):
             mode = 'stdio'
     if mode == 'socket':
         if not dropinfo.get('handle'):
-            raise SystemExit("socket mode needs a door32.sys with a socket handle")
-        return SocketConn(dropinfo['handle'])
-    if mode == 'console':
-        return WinConsoleConn()
-    return StdioConn()
+            raise SystemExit("socket mode needs a drop file with a socket handle")
+        c = SocketConn(dropinfo['handle'], clean=dropinfo.get('clean', False))
+    elif mode == 'console':
+        c = WinConsoleConn()
+    else:
+        c = StdioConn()
+    if dropinfo.get('deadline'):
+        c = Deadline(c, dropinfo['deadline'])
+    return c
 
 # ------------------------------------------------------------------ drop files
 def _read_lines(path):
     with open(path, encoding='cp437', errors='replace') as f:
         return [l.strip() for l in f.read().splitlines()]
 
+class DropFileError(ValueError):
+    pass
+
+BBSDEV_MODES = {'local', 'stdio', 'socket'}        # the ones these doors can use
+
+def parse_bbsdev(path):
+    """Parse and validate a BBSDEV.DRP (format 1.x). Raises DropFileError."""
+    raw = open(path, 'rb').read()
+    if raw.startswith(b'\xef\xbb\xbf'):
+        raise DropFileError("byte-order mark not allowed")
+    try:
+        text = raw.decode('utf-8')
+    except UnicodeDecodeError:
+        raise DropFileError("not valid UTF-8")
+    if '\r' in text.replace('\r\n', ''):
+        raise DropFileError("bare CR line ending")
+    lines = text.replace('\r\n', '\n').split('\n')
+    if lines and lines[-1] == '':
+        lines.pop()
+    if len(lines) < 19:
+        raise DropFileError(f"only {len(lines)} lines, need 19")
+    ver = lines[0].split('.')
+    if len(ver) != 2 or not all(v.isdigit() for v in ver):
+        raise DropFileError(f"bad version {lines[0]!r}")
+    if ver[0] != '1':
+        raise DropFileError(f"unsupported major version {lines[0]}")
+    L = lines[:19]                                  # newer minor versions may append lines
+    for i, v in enumerate(L):
+        if v != v.strip() or any(ord(ch) < 32 or 127 <= ord(ch) < 160 for ch in v):
+            raise DropFileError(f"line {i + 1} has whitespace or control characters")
+    comm, param = L[1], L[2]
+    if comm not in ('local', 'stdio', 'socket', 'serial', 'winserial', 'uart', 'fossil'):
+        raise DropFileError(f"unknown communications type {comm!r}")
+    if comm not in BBSDEV_MODES:
+        raise DropFileError(f"communications type {comm!r} isn't supported by this door")
+    if comm in ('local', 'stdio') and param:
+        raise DropFileError("line 3 must be empty for local/stdio")
+    if comm == 'socket' and not param.isdigit():
+        raise DropFileError("line 3 must be a socket number")
+    for n in (4, 5, 6, 7, 12, 13, 14, 15, 16, 17, 18, 19):
+        if not L[n - 1]:
+            raise DropFileError(f"line {n} is empty")
+    for n in (6, 7):
+        if not L[n - 1].isdigit() or not 1 <= int(L[n - 1]) <= 65535:
+            raise DropFileError(f"line {n} must be 1-65535")
+    for n in (8, 9, 19):
+        if L[n - 1] not in ('Y', 'N'):
+            raise DropFileError(f"line {n} must be Y or N")
+    if not (L[16].isdigit() or L[16] in ('sysop', 'cosysop')):
+        raise DropFileError("line 17 must be a number, sysop or cosysop")
+    if not L[17].isdigit():
+        raise DropFileError("line 18 must be a node number")
+    cterm = None
+    if L[9]:
+        parts = L[9].split('.')
+        if not all(p.isdigit() for p in parts) or len(parts) < 2:
+            raise DropFileError("line 10 must be a dotted CTerm revision")
+        cterm = (int(parts[0]), int(parts[1]))
+    deadline = None
+    if L[10]:
+        try:
+            deadline = calendar.timegm(time.strptime(L[10], '%Y-%m-%dT%H:%M:%SZ'))
+        except ValueError:
+            raise DropFileError("line 11 must be YYYY-MM-DDTHH:MM:SSZ")
+    return {
+        'format': 'BBSDEV.DRP ' + lines[0], 'mode': comm, 'handle': int(param) if comm == 'socket' else None,
+        'clean': True, 'name': L[3], 'key': L[4], 'width': int(L[5]), 'height': int(L[6]),
+        'ansi': L[7] == 'Y', 'rip': L[8] == 'Y', 'cterm': cterm, 'deadline': deadline,
+        'encoding': L[11], 'language': L[12], 'bbs_software': L[13], 'board': L[14], 'sysop': L[15],
+        'level': L[16], 'is_sysop': L[16] in ('sysop', 'cosysop'), 'node': int(L[17]), 'local_display': L[18] == 'Y',
+    }
+
+def user_id(info):
+    """A stable, filesystem-safe id for per-player files: from the BBSDEV.DRP
+    user key when there is one (survives alias changes), else from the alias."""
+    import re
+    if info.get('key'):
+        return 'key-' + hashlib.sha256(info['key'].encode('utf-8')).hexdigest()[:16]
+    return re.sub(r'[^A-Za-z0-9_.-]', '_', info.get('name') or 'player')[:30] or 'player'
+
+def text_codec(info):
+    """Python codec for text sent to the caller (BBSDEV.DRP line 12), default CP437."""
+    import codecs
+    enc = (info.get('encoding') or 'IBM437').strip()
+    try:
+        return codecs.lookup(enc).name
+    except LookupError:
+        return 'cp437'
+
 def read_dropfile(arg):
-    """Returns {'name':..., 'handle':...}. Accepts a door32.sys / DOOR.SYS path,
-    a node directory, or Mystic-style '.../door32' without extension."""
+    """Returns a dict with at least 'name' and 'handle'. Looks for BBSDEV.DRP
+    first (BBSDEV_DRP environment variable, or a BBSDEV.DRP path/folder on the
+    command line), then DOOR32.SYS, then DOOR.SYS. Accepts a file path, a node
+    directory, or Mystic-style '.../door32' without extension."""
     info = {'name': None, 'handle': None}
+    tried = []
+    env = os.environ.get('BBSDEV_DRP')
+    if env:
+        tried.append(env)
+    if arg:
+        if os.path.isdir(arg):
+            tried += [os.path.join(arg, n) for n in ('BBSDEV.DRP', 'bbsdev.drp')]
+        elif os.path.basename(arg).lower() == 'bbsdev.drp':
+            tried.append(arg)
+    for p in tried:
+        if os.path.isfile(p):
+            try:
+                return parse_bbsdev(p)
+            except (DropFileError, OSError) as e:
+                print(f"BBSDEV.DRP ignored ({p}): {e}", file=sys.stderr)
     if not arg:
         return info
     dirs = [arg] if os.path.isdir(arg) else [os.path.dirname(arg) or '.']

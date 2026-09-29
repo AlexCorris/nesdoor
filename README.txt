@@ -1,4 +1,4 @@
-NESDOOR v2.7.1 - NES games over sixel for BBS callers
+NESDOOR v2.8 - NES games over sixel for BBS callers
 ==============================================================================
 A game list of the .nes files in roms/, the picture drawn with sixel
 graphics, real key-down/key-up input and the game's own sound in SyncTERM,
@@ -153,6 +153,20 @@ IF "git pull" COMPLAINS ABOUT LOCAL CHANGES
    Or throw your edits away:  git checkout -- nesdoor.sh && git pull
 
 
+DROP FILES
+  The door reads, in this order:
+  1. BBSDEV.DRP - the modern format (https://realdeuce.github.io/bbsdev.drp/).
+     Found through the BBSDEV_DRP environment variable the BBS sets, or a
+     BBSDEV.DRP file/folder on the command line. Supported I/O types: stdio,
+     socket, local. Used from it: the alias, the stable user key (saves stay
+     with the player even if they change alias), the forced logoff time (the
+     door saves the game and exits on time), and the terminal encoding.
+  2. DOOR32.SYS - alias from line 7, socket handle from line 2.
+  3. DOOR.SYS - alias from line 36 (or line 10).
+  An invalid BBSDEV.DRP is rejected with a note in nesdoor.log and the door
+  falls back to the next drop file.
+
+
 ==============================================================================
 PLAYING
 ==============================================================================
@@ -258,6 +272,7 @@ GAMES  Only use ROMs you have the right to use - homebrew games, or dumps of
   cartridges you own.
 
 VERSION HISTORY
+  2.8  BBSDEV.DRP drop file support (stdio, socket, local; logoff deadline)
   2.7.1 save/reset messages moved to the top line
   2.7  Ctrl+R reset button; R on the controls screen erases a game's saves
   2.6  save games: auto-resume, Ctrl+S / Ctrl+L quick save, battery saves

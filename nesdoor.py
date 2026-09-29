@@ -217,8 +217,8 @@ class Saves:
          <game>.srm         the cartridge's own battery save (Zelda's save file etc.)
          <game>.state       quick save (Ctrl+S / Ctrl+L)
          <game>.resume      snapshot taken automatically when the player leaves"""
-    def __init__(self, name, rom):
-        safe = re.sub(r'[^A-Za-z0-9_.-]', '_', name)[:30] or 'player'
+    def __init__(self, uid, rom):
+        safe = re.sub(r'[^A-Za-z0-9_.-]', '_', uid)[:40] or 'player'
         self.dir = os.path.join(HERE, 'saves', safe)
         self.base = os.path.join(self.dir, os.path.splitext(os.path.basename(rom))[0])
     def path(self, kind):
@@ -270,8 +270,10 @@ def status_line(send, msg, color="1;33", title=None, col=1):
 def at(row, col):
     return f"\x1b[{row};{col}H"
 
+CODEC = 'cp437'                              # set from BBSDEV.DRP line 12 when present
+
 def text(send, row, col, s, color="37"):
-    send(f"{at(row, col)}\x1b[0;{color}m{s}\x1b[0m".encode('cp437', 'replace'))
+    send(f"{at(row, col)}\x1b[0;{color}m{s}\x1b[0m".encode(CODEC, 'replace'))
 
 def nice_name(fn):
     return os.path.splitext(fn)[0].replace('_', ' ').strip()
@@ -553,11 +555,11 @@ def p2_status(send, args, host):
     else:
         text(send, 20, 1, "waiting..."[:w], "0;37"); text(send, 21, 1, "(top list)"[:w], "0;36")
 
-def play_game(io_, send, emu, rom, term, cfg, args, pending=b'', host=None, name='player', resume=False):
+def play_game(io_, send, emu, rom, term, cfg, args, pending=b'', host=None, name='player', resume=False, uid=None):
     """Returns 'back' (player quit to the list) or 'gone' (caller hung up).
     With host set, a second caller can drop in as controller 2 and sees the same screen."""
     emu.load(rom)
-    saves = Saves(name, rom) if getattr(emu, 'can_save', False) else None
+    saves = Saves(uid or name, rom) if getattr(emu, 'can_save', False) else None
     sram_saved = None
     if saves:
         sram = saves.read('srm')
@@ -870,10 +872,18 @@ def main():
             emu.close(); io_.close()
         return
     name = (args.name or info.get('name') or os.environ.get('USER') or 'Player')[:20]
+    uid = connmod.user_id({'name': name} if args.name else dict(info, name=name))
+    global CODEC
+    CODEC = connmod.text_codec(info)
+    if info.get('ansi') is False:                        # BBSDEV.DRP says no ANSI: we can't draw anything
+        send("This door needs an ANSI terminal with sixel graphics (such as SyncTERM).\r\n".encode())
+        time.sleep(3)
+        emu.close(); io_.close()
+        return
     sessions_dir = os.path.join(HERE, 'sessions')
     try:
         if direct:
-            play_game(io_, send, emu, direct, term, cfg, args, term['leftover'], name=name)
+            play_game(io_, send, emu, direct, term, cfg, args, term['leftover'], name=name, uid=uid)
         else:
             while True:
                 try:
@@ -895,7 +905,7 @@ def main():
                     continue
                 rom = pick[1]
                 two_ok = getattr(emu, 'two_player', False)
-                sv = Saves(name, rom) if getattr(emu, 'can_save', False) else None
+                sv = Saves(uid, rom) if getattr(emu, 'can_save', False) else None
                 saved_at = sv.when('resume') if sv else None
                 if saved_at:
                     lines = [(f"You have a saved game from {saved_at}.", "1;33"),
@@ -927,7 +937,7 @@ def main():
                 host = twoplayer.Host(sessions_dir, name, rom) if two else None
                 try:
                     if play_game(io_, send, emu, os.path.join(romdir, rom), term, cfg, args, host=host,
-                                 name=name, resume=resume) == 'gone':
+                                 name=name, resume=resume, uid=uid) == 'gone':
                         break
                 except RuntimeError as e:                      # bad or unsupported ROM
                     send(b'\x1b[0m\x1b[2J')
