@@ -5,8 +5,9 @@ graphics, real key-down/key-up input and the game's own sound in SyncTERM,
 and optional 2-player games between two nodes.
 
 Callers need a sixel-capable terminal. SyncTERM (syncterm.net) is the one
-to recommend: it also plays the sound and reports held keys. Other terminals
-get a notice with "Try anyway? (Y/N)".
+to recommend: it also plays the sound and reports held keys. IcyTerm also
+plays the sound (held keys use timed holds). Other terminals get a notice
+with "Try anyway? (Y/N)".
 
 FILES
   nesdoor.py          the door
