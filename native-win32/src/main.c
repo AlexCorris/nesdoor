@@ -24,9 +24,176 @@ static char roms[MAX_ROMS][MAX_PATH];static int nrom;static uint16_t pad;static 
 static void logmsg(const char*f,...){va_list a;SYSTEMTIME s;if(!LOGF)LOGF=fopen("nesdoor-c.log","a");if(!LOGF)return;GetLocalTime(&s);fprintf(LOGF,"%02u:%02u:%02u ",s.wHour,s.wMinute,s.wSecond);va_start(a,f);vfprintf(LOGF,f,a);va_end(a);fputc('\n',LOGF);fflush(LOGF);}
 static void titleof(const char*fn,char*out,size_t n){size_t i,L;snprintf(out,n,"%s",fn);L=strlen(out);if(L>4&&!_stricmp(out+L-4,".nes"))out[L-4]=0;for(i=0;out[i];i++)if(out[i]=='_')out[i]=' ';}
 static void scan(void){WIN32_FIND_DATAA f;HANDLE h=FindFirstFileA("roms\\*.nes",&f);nrom=0;if(h==INVALID_HANDLE_VALUE)return;do{if(!(f.dwFileAttributes&FILE_ATTRIBUTE_DIRECTORY)&&nrom<MAX_ROMS)snprintf(roms[nrom++],MAX_PATH,"%s",f.cFileName);}while(FindNextFileA(h,&f));FindClose(h);}
-static int key(int ms){unsigned char b[64];int n=door_read(b,sizeof(b),ms);if(n<=0)return n;if(n>=3&&b[0]==27&&b[1]=='['){if(b[2]=='A')return 1001;if(b[2]=='B')return 1002;if(b[2]=='C')return 1003;if(b[2]=='D')return 1004;if(b[2]=='5')return 1005;if(b[2]=='6')return 1006;if(b[2]=='H')return 1007;if(b[2]=='F')return 1008;}return b[0];}
+#define KEYBUF_SIZE 256
+static unsigned char keybuf[KEYBUF_SIZE];
+static size_t keybuf_n=0;
+static DWORD keybuf_esc_since=0;
+
+static void key_consume(size_t n){
+ if(n>=keybuf_n){keybuf_n=0;return;}
+ memmove(keybuf,keybuf+n,keybuf_n-n);
+ keybuf_n-=n;
+}
+
+static int key_decode(void){
+ unsigned char c;
+
+ if(!keybuf_n)return 0;
+ c=keybuf[0];
+
+ if(c!=27){
+  key_consume(1);
+  keybuf_esc_since=0;
+  return c;
+ }
+
+ /*
+  * A bare Escape may be either the Esc key or the beginning of an ANSI
+  * sequence.  Keep it briefly so TCP fragmentation cannot turn ESC [ A
+  * into three unrelated key events.
+  */
+ if(keybuf_n==1){
+  if(!keybuf_esc_since)keybuf_esc_since=GetTickCount();
+  if(GetTickCount()-keybuf_esc_since<80)return 0;
+  key_consume(1);
+  keybuf_esc_since=0;
+  return 27;
+ }
+
+ if(keybuf[1]!='['){
+  key_consume(1);
+  keybuf_esc_since=0;
+  return 27;
+ }
+
+ if(keybuf_n<3){
+  if(!keybuf_esc_since)keybuf_esc_since=GetTickCount();
+  if(GetTickCount()-keybuf_esc_since<80)return 0;
+  key_consume(1);
+  keybuf_esc_since=0;
+  return 27;
+ }
+
+ keybuf_esc_since=0;
+
+ switch(keybuf[2]){
+  case 'A': key_consume(3); return 1001;
+  case 'B': key_consume(3); return 1002;
+  case 'C': key_consume(3); return 1003;
+  case 'D': key_consume(3); return 1004;
+
+  /* SyncTERM navigation sequences used by the Python client path. */
+  case 'V': key_consume(3); return 1005; /* Page Up */
+  case 'U': key_consume(3); return 1006; /* Page Down */
+  case 'K': key_consume(3); return 1007; /* Home */
+
+  case 'H': key_consume(3); return 1007;
+  case 'F': key_consume(3); return 1008;
+
+  /*
+   * Standard CSI 5~ / 6~ Page Up/Page Down.  Wait for the final ~ so a
+   * fragmented four-byte sequence is not consumed prematurely.
+   */
+  case '5':
+  case '6':
+   if(keybuf_n<4){
+    if(!keybuf_esc_since)keybuf_esc_since=GetTickCount();
+    return 0;
+   }
+   if(keybuf[3]=='~'){
+    int k=(keybuf[2]=='5')?1005:1006;
+    key_consume(4);
+    return k;
+   }
+   break;
+ }
+
+ /*
+  * Unknown CSI sequence: consume the complete short sequence when we can.
+  * Otherwise consume ESC only rather than throwing away following input.
+  */
+ {
+  size_t i;
+  for(i=2;i<keybuf_n;i++){
+   if(keybuf[i]>=0x40 && keybuf[i]<=0x7e){
+    key_consume(i+1);
+    return 0;
+   }
+  }
+ }
+
+ return 0;
+}
+
+static int key(int ms){
+ DWORD start=GetTickCount();
+
+ for(;;){
+  int k=key_decode();
+  if(k)return k;
+
+  if(!door_connected())return -1;
+
+  {
+   unsigned char b[64];
+   int wait=ms;
+   int n;
+
+   if(ms==0)wait=0;
+   else{
+    DWORD elapsed=GetTickCount()-start;
+    if(elapsed>=(DWORD)ms){
+     /*
+      * Give a pending bare ESC one last chance to mature before
+      * reporting a timeout.
+      */
+     k=key_decode();
+     return k;
+    }
+    wait=ms-(int)elapsed;
+    if(wait>20)wait=20;
+   }
+
+   n=door_read(b,sizeof(b),wait);
+   if(n<0)return -1;
+
+   if(n>0){
+    size_t room=KEYBUF_SIZE-keybuf_n;
+    size_t take=(size_t)n;
+
+    if(take>room)take=room;
+
+    if(take){
+     memcpy(keybuf+keybuf_n,b,take);
+     keybuf_n+=take;
+    }
+
+    continue;
+   }
+  }
+
+  /*
+   * key(0) must remain nonblocking for the emulation loop.
+   * key_decode() above still preserves incomplete ANSI sequences.
+   */
+  if(ms==0)return key_decode();
+
+  if(GetTickCount()-start>=(DWORD)ms)return key_decode();
+ }
+}
 static void drain(void){int q=0;while(q<150){if(key(25)>0)q=0;else q+=25;}}
-static int menu(void){int sel=0,k,i,top;char t[300];drain();for(;;){top=(sel/14)*14;door_printf("\x1b[0m\x1b[2J\x1b[H\x1b[?25l");door_printf("\x1b[3;29H\x1b[1;36mNeeds a sixel terminal such as SyncTERM");door_printf("\x1b[4;36H\x1b[1;32mNES ARCADE");door_printf("\x1b[6;4H\x1b[1;32m%d games",nrom);for(i=top;i<nrom&&i<top+14;i++){titleof(roms[i],t,sizeof(t));if(i==sel)door_printf("\x1b[%d;9H\x1b[44;1;37m%2d. %-58.58s\x1b[0m",8+i-top,i+1,t);else door_printf("\x1b[%d;11H\x1b[0;37m%2d. %s",8+i-top,i+1,t);}door_printf("\x1b[23;58H\x1b[1;33m%d of %d",sel+1,nrom);door_printf("\x1b[25;4H\x1b[1;36mUP/DOWN choose   PGUP/PGDN page   HOME/END   ENTER play");door_printf("\x1b[26;4HType to search   BACKSPACE erases     Ctrl+Q = leave");k=key(300);if(k==1001&&sel>0)sel--;else if(k==1002&&sel<nrom-1)sel++;else if(k==1005){sel-=14;if(sel<0)sel=0;}else if(k==1006){sel+=14;if(sel>=nrom)sel=nrom-1;}else if(k==1007)sel=0;else if(k==1008)sel=nrom-1;else if(k==13)return sel;else if(k==17||k=='q'||k=='Q')return-1;}}
+static int menu(void){int sel=0,k,i,top;char t[300];drain();
+ if(nrom==0){
+  door_printf("\x1b[0m\x1b[2J\x1b[H\x1b[?25l");
+  door_printf("\x1b[8;25H\x1b[1;31mNO NES ROMS FOUND");
+  door_printf("\x1b[10;15H\x1b[0;37mPlace .nes files in the roms directory.");
+  door_printf("\x1b[12;21H\x1b[1;36mPress Q or Ctrl+Q to return.");
+  for(;;){
+   k=key(300);
+   if(k=='q'||k=='Q'||k==17||k<0)return -1;
+  }
+ }
+ for(;;){top=(sel/14)*14;door_printf("\x1b[0m\x1b[2J\x1b[H\x1b[?25l");door_printf("\x1b[3;29H\x1b[1;36mNeeds a sixel terminal such as SyncTERM");door_printf("\x1b[4;36H\x1b[1;32mNES ARCADE");door_printf("\x1b[6;4H\x1b[1;32m%d games",nrom);for(i=top;i<nrom&&i<top+14;i++){titleof(roms[i],t,sizeof(t));if(i==sel)door_printf("\x1b[%d;9H\x1b[44;1;37m%2d. %-58.58s\x1b[0m",8+i-top,i+1,t);else door_printf("\x1b[%d;11H\x1b[0;37m%2d. %s",8+i-top,i+1,t);}door_printf("\x1b[23;58H\x1b[1;33m%d of %d",sel+1,nrom);door_printf("\x1b[24;4H\x1b[1;36mUP/DOWN choose   PGUP/PGDN page   HOME/END   ENTER play");door_printf("\x1b[25;4H\x1b[1;36mCtrl+Q = leave");k=key(300);if(k<0)return -1;if(k==1001&&sel>0)sel--;else if(k==1002&&sel<nrom-1)sel++;else if(k==1005){sel-=14;if(sel<0)sel=0;}else if(k==1006){sel+=14;if(sel>=nrom)sel=nrom-1;}else if(k==1007)sel=0;else if(k==1008)sel=nrom-1;else if(k==13)return sel;else if(k==17||k=='q'||k=='Q')return-1;}}
 static void pxrect(uint8_t *im,int W,int H,int x0,int y0,int x1,int y1,int r,int g,int b){
  int x,y;(void)r;
  if(x0<0)x0=0;if(y0<0)y0=0;if(x1>=W)x1=W-1;if(y1>=H)y1=H-1;
@@ -69,8 +236,7 @@ static int controls(const char*fn){
  char t[300];int k;titleof(fn,t,sizeof(t));
  door_printf("\x1b[0m\x1b[2J\x1b[H\x1b[?25l");
  door_printf("\x1b[2;16H\x1b[1;32mHOW TO PLAY:  %.52s",t);
- door_printf("\x1b[4;11H\x1b[1;33mPress 2 to let a friend on another node join as PLAYER 2");
- door_printf("\x1b[5;17H\x1b[0;37m(it shows up at the top of their game list)");
+ door_printf("\x1b[4;20H\x1b[1;33mNative Win32 single-player mode");
  controller_art();
  /* Upstream PAD_SPOTS: dpad=72, select=148, start=198, B=250, A=298. */
  door_printf("\x1b[16;16H\x1b[1;33mARROWS/WASD");
@@ -86,9 +252,23 @@ static int controls(const char*fn){
  door_printf("\x1b[19;10H\x1b[1;31mIn the game:  Ctrl+Q or Esc Esc = back to the list     M = sound");
  door_printf("\x1b[21;10H\x1b[0;36mCtrl+S saves your spot, Ctrl+L loads it. Leaving saves automatically.");
  door_printf("\x1b[23;20H\x1b[1;36mENTER = 1 player      Q = back to the list");
- for(;;){k=key(300);if(k==13)return 1;if(k=='q'||k=='Q'||k==17)return 0;}
+ for(;;){k=key(300);if(k<0)return 0;if(k==13)return 1;if(k=='q'||k=='Q'||k==17)return 0;}
 }
-static void savenames(const char*fn,char*state,char*srm){char base[MAX_PATH];size_t i;titleof(fn,base,sizeof(base));for(i=0;base[i];i++)if(!isalnum((unsigned char)base[i])&&base[i]!='-'&&base[i]!='_')base[i]='_';CreateDirectoryA("saves",NULL);snprintf(state,MAX_PATH,"saves\\%s.state",base);snprintf(srm,MAX_PATH,"saves\\%s.srm",base);}
+static void savenames(const char*fn,char*state,char*srm){
+ char base[MAX_PATH],user[80],dir[MAX_PATH];size_t i;
+ titleof(fn,base,sizeof(base));
+ snprintf(user,sizeof(user),"%s",door_alias());
+ if(!user[0])snprintf(user,sizeof(user),"Player");
+ for(i=0;base[i];i++)
+  if(!isalnum((unsigned char)base[i])&&base[i]!='-'&&base[i]!='_')base[i]='_';
+ for(i=0;user[i];i++)
+  if(!isalnum((unsigned char)user[i])&&user[i]!='-'&&user[i]!='_')user[i]='_';
+ CreateDirectoryA("saves",NULL);
+ snprintf(dir,sizeof(dir),"saves\\%s",user);
+ CreateDirectoryA(dir,NULL);
+ snprintf(state,MAX_PATH,"%s\\%s.state",dir,base);
+ snprintf(srm,MAX_PATH,"%s\\%s.srm",dir,base);
+}
 static void status(const char*s){door_printf("\x1b[1;1H\x1b[2K\x1b[1;33m%s\x1b[0m",s);}
 /* Runtime tuning. Defaults reproduce the known-good v0.10 exactly. */
 static int cfg_dpad_frames=20;

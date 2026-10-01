@@ -63,12 +63,56 @@ int door_connected(void) { return g_sock!=INVALID_SOCKET; }
 const char *door_alias(void) { return g_alias; }
 int door_write(const void *buf,size_t len) {
     const char *p=(const char*)buf;
+    DWORD blocked_since=0;
+
+    if(g_sock==INVALID_SOCKET) return 0;
+
     while(len) {
         int n=send(g_sock,p,(int)(len>32767?32767:len),0);
-        if(n>0) { p+=n; len-=n; continue; }
-        if(WSAGetLastError()==WSAEWOULDBLOCK) { Sleep(1); continue; }
+
+        if(n>0) {
+            p+=n;
+            len-=n;
+            blocked_since=0;
+            continue;
+        }
+
+        if(n<0 && WSAGetLastError()==WSAEWOULDBLOCK) {
+            fd_set w;
+            struct timeval tv;
+            int rc;
+
+            if(!blocked_since) blocked_since=GetTickCount();
+
+            /*
+             * Never let terminal backpressure stall the emulator forever.
+             * Wait in short intervals so a normally slow socket can drain,
+             * but abandon the connection after two seconds of continuous
+             * backpressure.
+             */
+            if(GetTickCount()-blocked_since >= 2000) {
+                g_sock=INVALID_SOCKET;
+                return 0;
+            }
+
+            FD_ZERO(&w);
+            FD_SET(g_sock,&w);
+            tv.tv_sec=0;
+            tv.tv_usec=10000;
+
+            rc=select(0,NULL,&w,NULL,&tv);
+            if(rc>0) continue;
+            if(rc==0) continue;
+
+            g_sock=INVALID_SOCKET;
+            return 0;
+        }
+
+        /* Parent owns the socket.  Mark it dead locally only. */
+        g_sock=INVALID_SOCKET;
         return 0;
     }
+
     return 1;
 }
 int door_printf(const char *fmt,...) {
@@ -85,9 +129,19 @@ int door_read(unsigned char *buf,size_t maxlen,int timeout_ms) {
     tv.tv_sec=timeout_ms/1000; tv.tv_usec=(timeout_ms%1000)*1000;
     rc=select(0,&r,NULL,NULL,&tv);
     if(rc==0) return 0;
-    if(rc<0) return -1;
+    if(rc<0) {
+        g_sock=INVALID_SOCKET;
+        return -1;
+    }
     rc=recv(g_sock,(char*)buf,(int)maxlen,0);
-    if(rc==0) return -1;
-    if(rc<0 && WSAGetLastError()==WSAEWOULDBLOCK) return 0;
+    if(rc==0) {
+        g_sock=INVALID_SOCKET;
+        return -1;
+    }
+    if(rc<0) {
+        if(WSAGetLastError()==WSAEWOULDBLOCK) return 0;
+        g_sock=INVALID_SOCKET;
+        return -1;
+    }
     return rc;
 }
