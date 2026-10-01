@@ -12,3 +12,6 @@ roms/*
 *.key.pub
 dist/
 build/
+
+# Native Windows build output
+*.exe
