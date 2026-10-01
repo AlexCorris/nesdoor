@@ -8,5 +8,5 @@ else
     ROM="roms"
 fi
 echo "$(date) START $ROM args: $*" >> nesdoor.log
-./venv/bin/python ./nesdoor.py "$ROM" "$@" --skip 3 --hold 100 2>>nesdoor.log
+./venv/bin/python ./nesdoor.py "$ROM" "$@" --hold 100 2>>nesdoor.log
 echo "$(date) END exit=$?" >> nesdoor.log

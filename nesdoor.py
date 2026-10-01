@@ -5,7 +5,7 @@ and the game's own audio.
 
   nesdoor.py [--roms roms/] [dropfile]      game list (default)
   nesdoor.py ROM.nes [dropfile]             play one game directly
-  options: --core fceumm_libretro.so --scale 1.5 --row 2 --skip 3 (picture size: nesdoor.ini [video])
+  options: --core fceumm_libretro.so --scale 1.5 --row 2 --skip 3 (picture size, frame rate: nesdoor.ini [video])
            --no-audio --no-keyreport
 
 Input:  SyncTERM reports physical key presses AND releases (CSI = 1 h), so
@@ -50,6 +50,10 @@ terminal_aspect = 1.2
 ; shape of an NES pixel: 1.0 = square (sharp, 16:15 picture),
 ; 1.143 = 8:7 like on an old TV (wider picture, smaller side panels)
 pixel_aspect = 1.0
+; frame rate: send every Nth of the NES's 60 frames a second. 1 = 60 fps
+; (smoothest, most bandwidth), 2 = 30 fps, 3 = 20 fps. A frame that hasn't
+; changed is never resent, so a still screen costs nothing either way.
+skip = 3
 
 [sound]
 ; SyncTERM audio command templates (see the Audio section of the CTerm manual)
@@ -814,7 +818,7 @@ def main():
     ap.add_argument('dropfile', nargs='?')
     ap.add_argument('--roms', default=None, help='folder of .nes files for the game list (default ./roms)')
     ap.add_argument('--core', default=None, help='libretro core (default: fceumm_libretro.so/.dll here)')
-    ap.add_argument('--skip', type=int, default=3)
+    ap.add_argument('--skip', type=int, default=None, help='send every Nth frame (default from nesdoor.ini)')
     ap.add_argument('--scale', type=float, default=None, help='picture height scale (default from nesdoor.ini)')
     ap.add_argument('--row', type=int, default=2); ap.add_argument('--col', type=int, default=None)
     ap.add_argument('--hold', type=int, default=100); ap.add_argument('--carry', type=int, default=650)
@@ -848,6 +852,9 @@ def main():
     v = cfg['video']
     if args.scale is None:
         args.scale = float(v.get('scale', 1.5))
+    if args.skip is None:
+        args.skip = int(v.get('skip', 3))
+    args.skip = max(1, args.skip)
     args.xscale = args.scale * float(v.get('terminal_aspect', 1.2)) * float(v.get('pixel_aspect', 1.0))
     img_cols = int(256 * args.xscale / 8 + 0.999)
     if args.col is None:
