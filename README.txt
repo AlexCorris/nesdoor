@@ -1,4 +1,4 @@
-NESDOOR v2.8 - NES games over sixel for BBS callers
+NESDOOR v2.9 - NES games over sixel for BBS callers
 ==============================================================================
 A game list of the .nes files in roms/, the picture drawn with sixel
 graphics, real key-down/key-up input and the game's own sound in SyncTERM,
@@ -280,6 +280,9 @@ GAMES  Only use ROMs you have the right to use - homebrew games, or dumps of
   cartridges you own.
 
 VERSION HISTORY
+  2.9  sixel encoding about 7x faster (full 60 fps now possible), frame rate
+       setting in nesdoor.ini (skip), IcyTerm sound and held keys -
+       contributed by NuSkooler
   2.8  BBSDEV.DRP drop file support (stdio, socket, local; logoff deadline)
   2.7.1 save/reset messages moved to the top line
   2.7  Ctrl+R reset button; R on the controls screen erases a game's saves
