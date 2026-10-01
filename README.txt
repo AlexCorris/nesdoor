@@ -1,4 +1,4 @@
-NESDOOR v2.8 - NES games over sixel for BBS callers
+NESDOOR v2.10 - NES games over sixel for BBS callers
 ==============================================================================
 A game list of the .nes files in roms/, the picture drawn with sixel
 graphics, real key-down/key-up input and the game's own sound in SyncTERM,
@@ -244,6 +244,38 @@ Command-line options (add them to the nesdoor.py line in nesdoor.sh):
 
 
 ==============================================================================
+NATIVE WINDOWS 7 / 32-BIT PORT (EXPERIMENTAL)
+==============================================================================
+A native C/Win32 implementation is also included in native-win32/. It was
+developed for older 32-bit Windows systems where the Python version may have
+difficulty maintaining emulator, audio, and SIXEL rendering performance.
+
+The native port has been tested with Windows 7 32-bit, Synchronet using
+DOOR32.SYS Socket mode, SyncTERM, and a 32-bit FCEUmm libretro core.
+
+Unlike a simple frame-rate reduction, the native port runs NES emulation at
+the core's native rate (approximately 60 Hz) while SIXEL presentation is
+independently capped at 20 FPS by default. Audio is serviced independently as
+well. This keeps terminal rendering speed from slowing the emulated console.
+
+Build from Linux with the MinGW i686 cross compiler:
+
+     cd native-win32
+     ./build-win7-32.sh
+
+Runtime input timing and SIXEL presentation rate can be adjusted in
+native-win32/nesdoor-c.ini.
+
+The native port is experimental and does not yet provide every feature of the
+main Python implementation. In particular, BBSDEV.DRP, the Python version's
+complete physical key-down/key-up support, two-player node-to-node games, and
+full save/resume feature parity are not currently claimed.
+
+See native-win32/README.txt for build, installation, configuration, controls,
+architecture notes, and current limitations.
+
+
+==============================================================================
 WINDOWS / SYNCHRONET (Win32)
 ==============================================================================
   1. Folder, e.g. C:\sbbs\xtrn\nesdoor\ with nesdoor.py, retro.py,
@@ -280,6 +312,11 @@ GAMES  Only use ROMs you have the right to use - homebrew games, or dumps of
   cartridges you own.
 
 VERSION HISTORY
+  2.10 experimental native Win32 port for 32-bit Windows 7 in native-win32/
+       (single-player) - contributed by anetonline
+  2.9  sixel encoding about 7x faster (full 60 fps now possible), frame rate
+       setting in nesdoor.ini (skip), IcyTerm sound and held keys -
+       contributed by NuSkooler
   2.8  BBSDEV.DRP drop file support (stdio, socket, local; logoff deadline)
   2.7.1 save/reset messages moved to the top line
   2.7  Ctrl+R reset button; R on the controls screen erases a game's saves
