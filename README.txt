@@ -1,4 +1,4 @@
-NESDOOR v2.9 - NES games over sixel for BBS callers
+NESDOOR v2.10 - NES games over sixel for BBS callers
 ==============================================================================
 A game list of the .nes files in roms/, the picture drawn with sixel
 graphics, real key-down/key-up input and the game's own sound in SyncTERM,
@@ -312,6 +312,8 @@ GAMES  Only use ROMs you have the right to use - homebrew games, or dumps of
   cartridges you own.
 
 VERSION HISTORY
+  2.10 experimental native Win32 port for 32-bit Windows 7 in native-win32/
+       (single-player) - contributed by anetonline
   2.9  sixel encoding about 7x faster (full 60 fps now possible), frame rate
        setting in nesdoor.ini (skip), IcyTerm sound and held keys -
        contributed by NuSkooler
