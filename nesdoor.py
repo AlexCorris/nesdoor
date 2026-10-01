@@ -569,7 +569,7 @@ def play_game(io_, send, emu, rom, term, cfg, args, pending=b'', host=None, name
         if resume:
             emu.load_state(saves.read('resume'))
     cterm = term.get('cterm')
-    reports = bool(cterm) and not args.no_keyreport
+    reports = bool(cterm or term.get('keyreport')) and not args.no_keyreport
     audio = None
     msg_until = 0.0
     def both(data):                           # host's caller + mirrored to player 2
@@ -741,7 +741,7 @@ def join_game(io_, send, sess, term, args, name):
         time.sleep(2.5)
         return 'back'
     cterm = term.get('cterm')
-    reports = bool(cterm) and not args.no_keyreport
+    reports = bool(cterm or term.get('keyreport')) and not args.no_keyreport
     send(b'\x1b[0m\x1b[?25l\x1b[2J')
     text(send, 1, max(1, args.col), f"{nice_name(g.game)[:44]}  - {sess['host'][:16]}'s game", "1;32")
     help_panels(send, args, True, "PLAYER 2")
