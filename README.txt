@@ -225,6 +225,10 @@ SETTINGS  (nesdoor.ini, created on first run)
                            tall; the picture is widened to cancel it. Use 1.0
                            if SyncTERM's aspect correction is turned off.
   pixel_aspect = 1.0       1.0 = square NES pixels; 1.143 = 8:7 "old TV" look
+  skip = 3                 frame rate: send every Nth of the NES's 60 frames
+                           a second. 1 = 60 fps (smoothest, most bandwidth),
+                           2 = 30 fps, 3 = 20 fps. Unchanged frames are never
+                           resent.
 
 [sound]
   volume = 70   rate = 16000   chunk = 0.2   gain = 2.5
@@ -236,6 +240,7 @@ SETTINGS  (nesdoor.ini, created on first run)
 Command-line options (add them to the nesdoor.py line in nesdoor.sh):
   --no-audio  --no-keyreport  --no-check (skip sixel check)  --skip N
   --scale N  --row N  --col N  --hold MS  --carry MS  --core PATH
+  --skip and --scale override nesdoor.ini.
 
 
 ==============================================================================
