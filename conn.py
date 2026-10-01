@@ -334,13 +334,18 @@ def read_dropfile(arg):
 def detect_terminal(conn, wait=1.5):
     """Ask the terminal what it is. Returns dict:
        sixel: True/False/None (None = no answer), cterm: (major, minor) for
-       SyncTERM's CTerm or None, leftover: unconsumed input bytes.
+       SyncTERM's CTerm or None, icyterm: (major, minor, patch) for IcyTerm
+       or None, keyreport: True when CSI < c lists feature 8 (physical key
+       press/release reports), leftover: unconsumed input bytes.
     SyncTERM answers CSI c with CSI = 67;84;101;114;109;<rev> c ("CTerm" + revision)
-    and CSI < c with CSI < 0;... c where 4 = pixel operations (sixel)."""
+    and CSI < c with CSI < 0;... c where 4 = pixel operations (sixel).
+    IcyTerm answers CSI c with CSI = 73;99;121;84;101;114;109;<ver> c ("IcyTerm"
+    + version) and implements the SyncTERM audio APCs; versions with key
+    reports list feature 8 in their CSI < c reply."""
     conn.write(b'\x1b[c\x1b[<c')
     buf, end = b'', time.monotonic() + wait
     got_da = got_cterm = False
-    info = {'sixel': False, 'cterm': None}
+    info = {'sixel': False, 'cterm': None, 'icyterm': None, 'keyreport': False}
     while time.monotonic() < end and not (got_da and got_cterm):
         data = conn.read(end - time.monotonic())
         if data is None:
@@ -362,6 +367,8 @@ def detect_terminal(conn, wait=1.5):
                     got_cterm = True
                     if '4' in params[1:]:
                         info['sixel'] = True
+                    if '8' in params[1:]:
+                        info['keyreport'] = True
                 elif body.startswith('='):
                     got_da = True
                     if params[:5] == ['67', '84', '101', '114', '109']:
@@ -369,6 +376,8 @@ def detect_terminal(conn, wait=1.5):
                             info['cterm'] = (int(params[5]), int(params[6]) if len(params) > 6 else 0)
                         except (ValueError, IndexError):
                             info['cterm'] = (0, 0)
+                    elif params[:7] == ['73', '99', '121', '84', '101', '114', '109']:
+                        info['icyterm'] = tuple(int(p) for p in params[7:] if p.isdigit()) or (0,)
                 elif body.startswith('?'):
                     got_da = True
                     if '4' in params[1:]:

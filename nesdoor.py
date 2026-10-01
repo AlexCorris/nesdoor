@@ -12,7 +12,7 @@ Input:  SyncTERM reports physical key presses AND releases (CSI = 1 h), so
         holding Right while tapping Jump works like a real controller. Other
         terminals fall back to timed holds (--hold / --carry).
 Audio:  the emulator's sound is cut into short chunks and queued on a SyncTERM
-        1.10 audio channel. M toggles it. --no-audio turns it off.
+        1.10 (or IcyTerm) audio channel. M toggles it. --no-audio turns it off.
 Needs:  a sixel-capable terminal (SyncTERM recommended); others get a notice.
 Keys:   arrows/WASD D-pad, X or Space = A, Z = B, Enter = Start,
         Tab or Right Shift = Select, M = sound on/off, Ctrl+Q or Esc Esc = quit
@@ -569,14 +569,15 @@ def play_game(io_, send, emu, rom, term, cfg, args, pending=b'', host=None, name
         if resume:
             emu.load_state(saves.read('resume'))
     cterm = term.get('cterm')
-    reports = bool(cterm) and not args.no_keyreport
+    reports = bool(cterm or term.get('keyreport')) and not args.no_keyreport
     audio = None
     msg_until = 0.0
     def both(data):                           # host's caller + mirrored to player 2
         send(data)
         if host:
             host.send(data)
-    local_audio = bool(cterm and cterm >= (1, 329))
+    # SyncTERM 1.10 (CTerm 1.329+) and IcyTerm both play the SyncTERM audio APCs
+    local_audio = bool(cterm and cterm >= (1, 329)) or bool(term.get('icyterm'))
     def audio_out(data):                      # SyncTERM audio only to terminals that can play it
         if local_audio:
             send(data)
@@ -740,7 +741,7 @@ def join_game(io_, send, sess, term, args, name):
         time.sleep(2.5)
         return 'back'
     cterm = term.get('cterm')
-    reports = bool(cterm) and not args.no_keyreport
+    reports = bool(cterm or term.get('keyreport')) and not args.no_keyreport
     send(b'\x1b[0m\x1b[?25l\x1b[2J')
     text(send, 1, max(1, args.col), f"{nice_name(g.game)[:44]}  - {sess['host'][:16]}'s game", "1;32")
     help_panels(send, args, True, "PLAYER 2")

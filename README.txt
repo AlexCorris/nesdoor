@@ -5,8 +5,10 @@ graphics, real key-down/key-up input and the game's own sound in SyncTERM,
 and optional 2-player games between two nodes.
 
 Callers need a sixel-capable terminal. SyncTERM (syncterm.net) is the one
-to recommend: it also plays the sound and reports held keys. Other terminals
-get a notice with "Try anyway? (Y/N)".
+to recommend: it also plays the sound and reports held keys. IcyTerm also
+plays the sound, and reports held keys in versions that list key reports
+(feature 8) in their CSI < c reply. Other terminals get a notice with
+"Try anyway? (Y/N)".
 
 FILES
   nesdoor.py          the door
@@ -181,10 +183,11 @@ CONTROLS    D-pad = arrows or WASD     A = X or Space     B = Z
             Ctrl+S = save your spot    Ctrl+L = load it    Ctrl+R = reset
             A controls screen with a gamepad picture appears before each game.
 
-HELD KEYS   In SyncTERM the door turns on physical key reporting, so holding
-            Right while tapping Jump works like a real controller. Other
-            terminals get timed holds (--hold / --carry) and E / Q combo keys
-            (jump right / jump left).
+HELD KEYS   In SyncTERM, and in IcyTerm versions that list key reports, the
+            door turns on physical key reporting, so holding Right while
+            tapping Jump works like a real controller. Other terminals get
+            timed holds (--hold / --carry) and E / Q combo keys (jump right /
+            jump left).
 
 2 PLAYERS   On the controls screen press 2 instead of ENTER: you are PLAYER 1
             and the game is offered to the other nodes. It appears at the top
