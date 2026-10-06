@@ -581,7 +581,7 @@ def play_game(io_, send, emu, rom, term, cfg, args, pending=b'', host=None, name
         if host:
             host.send(data)
     # SyncTERM 1.10 (CTerm 1.329+) and IcyTerm both play the SyncTERM audio APCs
-    local_audio = bool(cterm and cterm >= (1, 329)) or bool(term.get('icyterm'))
+    local_audio = bool(cterm and cterm >= (1, 329)) or bool(term.get('icyterm')) or bool(term.get('audio'))
     def audio_out(data):                      # SyncTERM audio only to terminals that can play it
         if local_audio:
             send(data)

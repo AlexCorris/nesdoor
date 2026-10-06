@@ -341,11 +341,16 @@ def detect_terminal(conn, wait=1.5):
     and CSI < c with CSI < 0;... c where 4 = pixel operations (sixel).
     IcyTerm answers CSI c with CSI = 73;99;121;84;101;114;109;<ver> c ("IcyTerm"
     + version) and implements the SyncTERM audio APCs; versions with key
-    reports list feature 8 in their CSI < c reply."""
-    conn.write(b'\x1b[c\x1b[<c')
+    reports list feature 8 in their CSI < c reply.
+    audio: True when the terminal answers SyncTERM's sound-file feature query
+    (APC SyncTERM:Q;libsndfile -> CSI = 7 ; 100 ; 1 n), so terminals other
+    than SyncTERM and IcyTerm that play the SyncTERM audio APCs (Hermes
+    Terminal) get sound too. Asked first, so its answer arrives before the
+    DA replies the loop waits for."""
+    conn.write(b'\x1b_SyncTERM:Q;libsndfile\x1b\\\x1b[c\x1b[<c')
     buf, end = b'', time.monotonic() + wait
     got_da = got_cterm = False
-    info = {'sixel': False, 'cterm': None, 'icyterm': None, 'keyreport': False}
+    info = {'sixel': False, 'cterm': None, 'icyterm': None, 'keyreport': False, 'audio': False}
     while time.monotonic() < end and not (got_da and got_cterm):
         data = conn.read(end - time.monotonic())
         if data is None:
@@ -382,6 +387,9 @@ def detect_terminal(conn, wait=1.5):
                     got_da = True
                     if '4' in params[1:]:
                         info['sixel'] = True
+                buf = buf[:i] + buf[j + 1:]
+            elif buf[j:j + 1] == b'n' and buf[i + 2:j].startswith(b'=7;100;'):
+                info['audio'] = buf[i + 2:j] == b'=7;100;1'
                 buf = buf[:i] + buf[j + 1:]
             else:
                 break
