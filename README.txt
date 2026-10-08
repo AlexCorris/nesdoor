@@ -1,4 +1,4 @@
-NESDOOR v2.10 - NES games over sixel for BBS callers
+NESDOOR v2.11 - NES games over sixel for BBS callers
 ==============================================================================
 A game list of the .nes files in roms/, the picture drawn with sixel
 graphics, real key-down/key-up input and the game's own sound in SyncTERM,
@@ -7,8 +7,9 @@ and optional 2-player games between two nodes.
 Callers need a sixel-capable terminal. SyncTERM (syncterm.net) is the one
 to recommend: it also plays the sound and reports held keys. IcyTerm also
 plays the sound, and reports held keys in versions that list key reports
-(feature 8) in their CSI < c reply. Other terminals get a notice with
-"Try anyway? (Y/N)".
+(feature 8) in their CSI < c reply. Any other terminal that answers
+SyncTERM's audio query (such as Hermes Terminal) gets the sound too. Other
+terminals get a notice with "Try anyway? (Y/N)".
 
 FILES
   nesdoor.py          the door
@@ -271,6 +272,10 @@ main Python implementation. In particular, BBSDEV.DRP, the Python version's
 complete physical key-down/key-up support, two-player node-to-node games, and
 full save/resume feature parity are not currently claimed.
 
+A ready-to-run sysop package (NESDoor-Native-Win32-v0.10.zip, put together
+by StingRay) is attached to the GitHub release: the exe, SETUP.bat, guides
+and its source. Add your own 32-bit fceumm_libretro.dll and ROMs.
+
 See native-win32/README.txt for build, installation, configuration, controls,
 architecture notes, and current limitations.
 
@@ -312,6 +317,9 @@ GAMES  Only use ROMs you have the right to use - homebrew games, or dumps of
   cartridges you own.
 
 VERSION HISTORY
+  2.11 sound in any terminal that answers SyncTERM's audio query (Hermes
+       Terminal) - contributed by Will Price (cyphers); native Win32 sysop
+       package on the release page - from StingRay
   2.10 experimental native Win32 port for 32-bit Windows 7 in native-win32/
        (single-player) - contributed by anetonline
   2.9  sixel encoding about 7x faster (full 60 fps now possible), frame rate
